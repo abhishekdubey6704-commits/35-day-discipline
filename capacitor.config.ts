@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.discipline.thirtyfive',
-  appName: '35 Day Discipline',
+  appName: 'Fitty Guy',
   webDir: 'dist',
   bundledWebRuntime: false,
   android: { allowMixedContent: false }
