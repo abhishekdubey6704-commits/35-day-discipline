@@ -1,4 +1,4 @@
-# 35 Day Discipline
+# Fitty Guy
 
 **Discipline creates freedom.**
 
