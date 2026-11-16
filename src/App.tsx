@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Activity, Apple, ArrowDownLeft, ArrowUpRight, BookOpen, CalendarDays, Check, ChevronRight, CirclePlus, Droplets, Dumbbell, Flame, Heart, Home, LockKeyhole, Moon, MoreHorizontal, Plus, Search, Settings, Target, Wallet, X } from 'lucide-react'
+import { Activity, Apple, ArrowDownLeft, ArrowUpRight, BookOpen, CalendarDays, Check, ChevronRight, Droplets, Dumbbell, Flame, Heart, Home, LockKeyhole, Moon, MoreHorizontal, Plus, Search, Settings, Target, Wallet, X } from 'lucide-react'
 
 type RecordItem = { id: string; module: string; title: string; amount?: number; unit?: string; date: string; note?: string }
 type Challenge = { id: string; name: string; days: number; start: string; rules: string[]; done: string[]; paused: boolean }
