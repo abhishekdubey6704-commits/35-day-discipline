@@ -108,7 +108,7 @@ export default function App() {
   }
 
   return <div className="app-shell">
-    <header className="topbar"><div className="brand"><div className="brand-mark"><Flame size={21}/></div><div><b>35 DAY <span>DISCIPLINE</span></b><small>Discipline creates freedom.</small></div></div><button className="icon-btn" onClick={() => setTab('Settings')} aria-label="Settings"><Settings size={19}/></button></header>
+    <header className="topbar"><div className="brand"><div className="brand-mark"><Flame size={21}/></div><div><b>FITTY <span>GUY</span></b><small>Discipline creates freedom.</small></div></div><button className="icon-btn" onClick={() => setTab('Settings')} aria-label="Settings"><Settings size={19}/></button></header>
     <main>
       {!storageReady && <div className="storage-banner">Opening your private on-device database…</div>}
       {storageError && <div className="storage-banner warning">{storageError}</div>}
