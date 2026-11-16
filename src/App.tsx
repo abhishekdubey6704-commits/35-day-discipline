@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { exportDatabase, migrateLegacy, restoreDatabase, writeAll } from './data/database'
 import { Activity, Apple, ArrowDownLeft, ArrowUpRight, BookOpen, CalendarDays, Check, ChevronRight, Droplets, Dumbbell, Flame, Heart, Home, LockKeyhole, Moon, MoreHorizontal, Plus, Search, Settings, Target, Wallet, X } from 'lucide-react'
 
 type RecordItem = { id: string; module: string; title: string; amount?: number; unit?: string; date: string; note?: string }
@@ -35,9 +36,30 @@ export default function App() {
   const [ruleText, setRuleText] = useState('Workout')
   const [rules, setRules] = useState(['Workout', 'Read 60 minutes', 'Meditate 30 minutes'])
   const [showModules, setShowModules] = useState(false)
+  const [storageReady, setStorageReady] = useState(false)
+  const [storageError, setStorageError] = useState('')
 
-  const saveRecords = (next: RecordItem[]) => { setRecords(next); localStorage.setItem('35dd.records', JSON.stringify(next)) }
-  const saveChallenges = (next: Challenge[]) => { setChallenges(next); localStorage.setItem('35dd.challenges', JSON.stringify(next)) }
+  useEffect(() => {
+    let active = true
+    Promise.all([
+      migrateLegacy<RecordItem>('records', '35dd.records'),
+      migrateLegacy<Challenge>('challenges', '35dd.challenges')
+    ]).then(([savedRecords, savedChallenges]) => {
+      if (!active) return
+      setRecords(savedRecords)
+      setChallenges(savedChallenges)
+      setStorageReady(true)
+    }).catch(() => {
+      if (active) {
+        setStorageError('Local database is unavailable. Existing device cache remains available.')
+        setStorageReady(true)
+      }
+    })
+    return () => { active = false }
+  }, [])
+
+  const saveRecords = (next: RecordItem[]) => { setRecords(next); localStorage.setItem('35dd.records', JSON.stringify(next)); void writeAll('records', next).catch(() => setStorageError('Could not write to the local database. Export a backup before closing the app.')) }
+  const saveChallenges = (next: Challenge[]) => { setChallenges(next); localStorage.setItem('35dd.challenges', JSON.stringify(next)); void writeAll('challenges', next).catch(() => setStorageError('Could not write to the local database. Export a backup before closing the app.')) }
   const todays = records.filter(r => r.date === today())
   const water = todays.filter(r => r.module === 'Water Intake').reduce((s, r) => s + (r.amount || 0), 0)
   const calories = todays.filter(r => r.module === 'Diet & Nutrition').reduce((s, r) => s + (r.amount || 0), 0)
@@ -58,14 +80,38 @@ export default function App() {
     const key = today() + ':' + rule
     saveChallenges(challenges.map(c => c.id !== challenge.id ? c : { ...c, done: c.done.includes(key) ? c.done.filter(x => x !== key) : [...c.done, key] }))
   }
-  const exportBackup = () => {
-    const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), records, challenges }, null, 2)], { type: 'application/json' })
+  const exportBackup = async () => {
+    const data = await exportDatabase()
+    const blob = new Blob([JSON.stringify({ app: '35-day-discipline', schemaVersion: 1, exportedAt: new Date().toISOString(), ...data }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = '35-day-discipline-backup.json'; a.click(); URL.revokeObjectURL(url)
+  }
+
+  const importBackup = async (file?: File) => {
+    if (!file) return
+    try {
+      const parsed = JSON.parse(await file.text()) as Record<string, unknown>
+      if (parsed.app !== '35-day-discipline' || !Array.isArray(parsed.records) || !Array.isArray(parsed.challenges)) {
+        throw new Error('This file is not a valid 35 Day Discipline backup.')
+      }
+      if (!confirm('Restore this backup? Current records in the included sections will be replaced.')) return
+      await restoreDatabase(parsed)
+      const nextRecords = parsed.records as RecordItem[]
+      const nextChallenges = parsed.challenges as Challenge[]
+      setRecords(nextRecords); setChallenges(nextChallenges)
+      localStorage.setItem('35dd.records', JSON.stringify(nextRecords))
+      localStorage.setItem('35dd.challenges', JSON.stringify(nextChallenges))
+      setStorageError('')
+      alert('Backup restored successfully.')
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Unable to restore this backup.')
+    }
   }
 
   return <div className="app-shell">
     <header className="topbar"><div className="brand"><div className="brand-mark"><Flame size={21}/></div><div><b>35 DAY <span>DISCIPLINE</span></b><small>Discipline creates freedom.</small></div></div><button className="icon-btn" onClick={() => setTab('Settings')} aria-label="Settings"><Settings size={19}/></button></header>
     <main>
+      {!storageReady && <div className="storage-banner">Opening your private on-device database…</div>}
+      {storageError && <div className="storage-banner warning">{storageError}</div>}
       {tab === 'Overview' && <><section className="welcome"><div><p className="eyebrow">YOUR DAILY STANDARD</p><h1>Stay consistent.<br/><em>Become unstoppable.</em></h1><p className="muted">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p></div><div className="streak"><Flame/><b>{todays.length}</b><small>ENTRIES TODAY</small></div></section>
         <section className="metric-grid">
           <Metric icon={<Droplets/>} label="WATER" value={(water / 1000).toFixed(1)} unit="/ 4.0 L" progress={Math.min(100, water / 40)}/>
@@ -85,7 +131,7 @@ export default function App() {
       </>}
       {tab === 'Modules' && <><p className="eyebrow">YOUR TOOLKIT</p><h1>All modules</h1><div className="module-list">{modules.map(m => <button key={m.name} onClick={() => { setRecordModule(m.name); setModal('record') }}><m.icon/><span><b>{m.name}</b><small>{m.desc}</small></span><ChevronRight/></button>)}</div></>}
       {tab === 'History' && <><p className="eyebrow">YOUR DATA</p><h1>Activity history</h1><div className="search"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search every record..."/></div>{filtered.length ? filtered.map(r => <div className="history-row" key={r.id}><RecordRow record={r}/><button className="delete-btn" onClick={() => saveRecords(records.filter(x => x.id !== r.id))}>Delete</button></div>) : <div className="empty"><b>No matching records</b></div>}</>}
-      {tab === 'Settings' && <><p className="eyebrow">PREFERENCES & DATA</p><h1>Settings</h1><div className="setting-card"><div className="setting-icon"><LockKeyhole/></div><div><b>Private by design</b><p>Records are stored locally in this app on this device. This starter build does not sync to a server.</p></div></div><button className="setting-row" onClick={exportBackup}><span><b>Export backup</b><small>Download your records and challenges as JSON</small></span><ArrowDownLeft/></button><button className="setting-row" onClick={() => { if (confirm('Import is not enabled in this first build.')) return }}><span><b>Restore backup</b><small>Backup import will be enabled after validation</small></span><ArrowUpRight/></button><p className="footnote">Version 1.0.0 · Offline-first foundation</p></>}
+      {tab === 'Settings' && <><p className="eyebrow">PREFERENCES & DATA</p><h1>Settings</h1><div className="setting-card"><div className="setting-icon"><LockKeyhole/></div><div><b>Private by design</b><p>Records are stored locally in this app on this device. This starter build does not sync to a server.</p></div></div><button className="setting-row" onClick={exportBackup}><span><b>Export backup</b><small>Download your records and challenges as JSON</small></span><ArrowDownLeft/></button><label className="setting-row file-setting"><span><b>Restore backup</b><small>Validate and restore a JSON backup</small></span><ArrowUpRight/><input type="file" accept="application/json,.json" onChange={e => { void importBackup(e.target.files?.[0]); e.currentTarget.value = '' }}/></label><p className="footnote">Version 1.1.0 · Local database enabled</p></>}
     </main>
     <nav className="bottom-nav"><NavButton active={tab === 'Overview'} icon={<Home/>} label="Home" onClick={() => setTab('Overview')}/><NavButton active={tab === 'Modules'} icon={<MoreHorizontal/>} label="Modules" onClick={() => setTab('Modules')}/><NavButton active={tab === 'History'} icon={<CalendarDays/>} label="History" onClick={() => setTab('History')}/><NavButton active={tab === 'Settings'} icon={<Settings/>} label="Settings" onClick={() => setTab('Settings')}/></nav>
     {modal && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="modal" onClick={e => e.stopPropagation()}><div className="modal-head"><h2>{modal === 'record' ? 'Add a record' : 'Create challenge'}</h2><button className="icon-btn" onClick={() => setModal(null)}><X/></button></div>
