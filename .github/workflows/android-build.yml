@@ -1,0 +1,58 @@
+name: Android build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install dependencies
+        run: npm install
+      - name: Build web app
+        run: npm run build
+      - name: Add Android platform
+        run: npx cap add android
+      - name: Configure Android SDK
+        run: |
+          sed -i 's/minSdkVersion = .*/minSdkVersion = 29/' android/variables.gradle || true
+          sed -i 's/targetSdkVersion = .*/targetSdkVersion = 35/' android/variables.gradle || true
+          sed -i 's/compileSdkVersion = .*/compileSdkVersion = 35/' android/variables.gradle || true
+          if [ -f android/app/src/main/AndroidManifest.xml ]; then
+            sed -i '/<uses-permission android:name="android.permission.INTERNET"\/>/d' android/app/src/main/AndroidManifest.xml
+          fi
+      - name: Sync Capacitor
+        run: npx cap sync android
+      - name: Build APK and AAB
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug bundleDebug
+      - name: Upload APK and AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: 35-day-discipline-android
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/bundle/debug/*.aab
+          if-no-files-found: error
+          retention-days: 14
